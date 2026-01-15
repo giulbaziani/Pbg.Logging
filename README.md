@@ -1,5 +1,8 @@
 # Pbg.Logging
 
+[![NuGet](https://img.shields.io/nuget/v/Pbg.Logging.svg)](https://www.nuget.org/packages/Pbg.Logging/)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Pbg.Logging.svg)](https://www.nuget.org/packages/Pbg.Logging/)
+
 A high-performance, centralized logging library for .NET applications that captures and sends structured logs to a remote endpoint in batches.
 
 ## Features
@@ -15,9 +18,19 @@ A high-performance, centralized logging library for .NET applications that captu
 
 ## Installation
 
+Install via NuGet Package Manager:
+
 ```bash
 dotnet add package Pbg.Logging
 ```
+
+Or via NuGet Package Manager Console:
+
+```powershell
+Install-Package Pbg.Logging
+```
+
+Or visit the [NuGet Gallery](https://www.nuget.org/packages/Pbg.Logging/)
 
 ## Quick Start
 
