@@ -7,9 +7,17 @@
 	<PackageId>Pbg.Logging</PackageId>
 	<Company>Pbg</Company>
 	<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+
+	<MinVerTagPrefix>v</MinVerTagPrefix>
+	<MinVerDefaultPreReleasePhase>preview</MinVerDefaultPreReleasePhase>
   </PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="MinVer" Version="1.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 
