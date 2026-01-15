@@ -133,6 +133,6 @@ internal class PbgLogProcessor : BackgroundService
                 .FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?
                 .ToString() ?? "127.0.0.1";
         }
-        catch { return "0.0.0.0"; } 
+        catch { return "0.0.0.0"; }
     }
 }
