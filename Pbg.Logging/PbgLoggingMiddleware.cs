@@ -40,6 +40,11 @@ public class PbgLoggingMiddleware
             ["Path"] = context.Request.Path
         };
 
+        if (context.Request.Headers.Count > 0)
+        {
+            initialScope["RequestHeaders"] = context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+        }
+
         using (logger.BeginScope(initialScope))
         {
             try
@@ -59,6 +64,11 @@ public class PbgLoggingMiddleware
                     ["ResponseBody"] = responseBody,
                     ["Elapsed"] = sw.Elapsed.TotalMilliseconds
                 };
+
+                if (context.Response.Headers.Count > 0)
+                {
+                    finalScope["ResponseHeaders"] = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+                }
 
                 using (logger.BeginScope(finalScope))
                 {

@@ -17,5 +17,6 @@ public class PbgLogEntry
     public int? StatusCode { get; set; }
     public string? RequestBody { get; set; }
     public string? ResponseBody { get; set; }
+    public Dictionary<string, string>? RequestHeaders { get; set; }
     public double? ElapsedMilliseconds { get; set; }
 }
