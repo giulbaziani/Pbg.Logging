@@ -52,6 +52,7 @@ internal class PbgLogger : ILogger
                         case "Path": currentEntry.Path = prop.Value?.ToString(); break;
                         case "StatusCode": if (prop.Value is int code) currentEntry.StatusCode = code; break;
                         case "Elapsed": if (prop.Value is double ms) currentEntry.ElapsedMilliseconds = ms; break;
+                        case "RequestHeaders": if (prop.Value is Dictionary<string, string> reqHeaders) currentEntry.RequestHeaders = reqHeaders; break;
                     }
                 }
             }
