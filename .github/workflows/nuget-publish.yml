@@ -7,6 +7,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions: # Нужно для создания релиза
+      contents: write
+    
     steps:
       - uses: actions/checkout@v3
         with:
@@ -17,8 +20,27 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Set Version Variable
+        # Сохраняем версию в переменную, чтобы использовать её везде одинаково
+        run: echo "VERSION=1.0.${{ github.run_number }}" >> $GITHUB_ENV
+
       - name: Pack
-        run: dotnet pack Pbg.Logging/Pbg.Logging.csproj -c Release -o out /p:PackageVersion=1.0.${{ github.run_number }} /p:MinVerSkip=true
+        # Отключаем MinVer и ставим свою версию
+        run: >
+          dotnet pack Pbg.Logging/Pbg.Logging.csproj 
+          -c Release 
+          -o out 
+          /p:PackageVersion=${{ env.VERSION }} 
+          /p:MinVerSkip=true
 
       - name: Push to NuGet
         run: dotnet nuget push out/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+
+      - name: Create GitHub Release
+        # Этот шаг создаст "Release" в интерфейсе GitHub
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          files: out/*.nupkg
+          generate_release_notes: true
