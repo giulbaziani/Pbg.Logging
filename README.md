@@ -39,7 +39,7 @@ using Pbg.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Logging.AddPbgLogging(options =>
+builder.Logging.AddPbgLogger(options =>
 {
     options.LicenseKey = new Guid("your-license-key-here");
     options.EndpointUrl = "https://your-endpoint.com/api/logs";
