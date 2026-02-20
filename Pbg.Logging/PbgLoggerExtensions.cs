@@ -18,7 +18,7 @@ public static class PbgLoggerExtensions
 
         var channel = Channel.CreateBounded<PbgLogEntry>(new BoundedChannelOptions(10000)
         {
-            FullMode = BoundedChannelFullMode.DropOldest
+            FullMode = BoundedChannelFullMode.DropNewest
         });
 
         builder.Services.AddSingleton(options);

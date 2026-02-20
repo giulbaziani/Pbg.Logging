@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
 using Pbg.Logging.Model;
 using System.Net.Http.Json;
 using System.Threading.Channels;
@@ -115,14 +116,23 @@ internal class PbgLogProcessor : BackgroundService
         {
             Timestamp = DateTime.UtcNow,
             LogLevel = level.ToString(),
-            Message = $"[Pbg.Logging Internal]: {message}",
+            Message = message,
             ProjectName = _options.ProjectName,
             Environment = _options.Environment.ToString(),
             MachineName = _machineName,
             IpAddress = _ipAddress
         };
 
-        Console.WriteLine(selfLog.Message);
+        Console.Error.WriteLine($"[Pbg.Logging][{level}] {message}");
+
+        try
+        {
+            await _httpClient.PostAsJsonAsync(_options.EndpointUrl, new[] { selfLog });
+        }
+        catch
+        {
+            // Silently ignore — console output above is the fallback
+        }
     }
 
     private string GetLocalIpAddress()
