@@ -9,15 +9,17 @@ internal class PbgLoggerProvider : ILoggerProvider, ISupportExternalScope
 {
     private readonly ChannelWriter<PbgLogEntry> _writer;
     private IExternalScopeProvider? _scopeProvider;
+    private readonly PbgLoggerOptions _options;
 
-    public PbgLoggerProvider(Channel<PbgLogEntry> channel)
+    public PbgLoggerProvider(Channel<PbgLogEntry> channel, PbgLoggerOptions options)
     {
         _writer = channel.Writer;
+        _options = options;
     }
 
     public ILogger CreateLogger(string categoryName)
     {
-        return new PbgLogger(_writer, _scopeProvider, categoryName);
+        return new PbgLogger(_writer, _scopeProvider, _options, categoryName);
     }
 
     public void SetScopeProvider(IExternalScopeProvider scopeProvider)

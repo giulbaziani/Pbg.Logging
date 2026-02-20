@@ -2,6 +2,8 @@
 using Microsoft.Extensions.Logging;
 using Pbg.Logging.Model;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Channels;
 
 namespace Pbg.Logging;
@@ -13,6 +15,7 @@ internal class PbgLogProcessor : BackgroundService
     private readonly HttpClient _httpClient;
     private readonly string _machineName;
     private readonly string _ipAddress;
+    private static readonly JsonSerializerOptions JsonOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
     public PbgLogProcessor(Channel<PbgLogEntry> channel, PbgLoggerOptions options)
     {
@@ -32,7 +35,7 @@ internal class PbgLogProcessor : BackgroundService
         var reader = _channel.Reader;
         var batch = new List<PbgLogEntry>();
 
-        while (await reader.WaitToReadAsync(CancellationToken.None))
+        while (await reader.WaitToReadAsync(stoppingToken))
         {
             try
             {
@@ -85,7 +88,7 @@ internal class PbgLogProcessor : BackgroundService
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync(_options.EndpointUrl, logs);
+                var response = await _httpClient.PostAsJsonAsync(_options.EndpointUrl, logs, JsonOptions);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -126,7 +129,7 @@ internal class PbgLogProcessor : BackgroundService
 
         try
         {
-            await _httpClient.PostAsJsonAsync(_options.EndpointUrl, new[] { selfLog });
+            await _httpClient.PostAsJsonAsync(_options.EndpointUrl, new[] { selfLog }, JsonOptions);
         }
         catch
         {
