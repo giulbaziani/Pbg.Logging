@@ -9,12 +9,14 @@ internal class PbgLogger : ILogger
 {
     private readonly ChannelWriter<PbgLogEntry> _writer;
     private readonly IExternalScopeProvider? _scopeProvider;
+    private readonly PbgLoggerOptions _options;
     private readonly string _categoryName;
 
-    public PbgLogger(ChannelWriter<PbgLogEntry> writer, IExternalScopeProvider? scopeProvider, string categoryName)
+    public PbgLogger(ChannelWriter<PbgLogEntry> writer, IExternalScopeProvider? scopeProvider, PbgLoggerOptions options, string categoryName)
     {
         _writer = writer;
         _scopeProvider = scopeProvider;
+        _options = options;
         _categoryName = categoryName;
     }
 
@@ -44,15 +46,31 @@ internal class PbgLogger : ILogger
                 {
                     switch (prop.Key)
                     {
-                        case "UserId": currentEntry.UserId = prop.Value?.ToString(); break;
-                        case "TraceId":  if (string.IsNullOrEmpty(foundTraceId)) foundTraceId = prop.Value?.ToString(); break;
-                        case "RequestBody": currentEntry.RequestBody = prop.Value?.ToString(); break;
-                        case "ResponseBody": currentEntry.ResponseBody = prop.Value?.ToString(); break;
-                        case "Method": currentEntry.Method = prop.Value?.ToString();  break;
+                        case "UserId":
+                            if (_options.IncludeUserId) currentEntry.UserId = prop.Value?.ToString();
+                            break;
+                        case "RequestId":
+                            currentEntry.RequestId = prop.Value?.ToString();
+                            break;
+                        case "TraceId":
+                            if (string.IsNullOrEmpty(foundTraceId)) foundTraceId = prop.Value?.ToString();
+                            break;
+                        case "RequestBody":
+                            if (_options.IncludeRequestBody) currentEntry.RequestBody = prop.Value?.ToString();
+                            break;
+                        case "ResponseBody":
+                            if (_options.IncludeResponseBody) currentEntry.ResponseBody = prop.Value?.ToString();
+                            break;
+                        case "Method": currentEntry.Method = prop.Value?.ToString(); break;
                         case "Path": currentEntry.Path = prop.Value?.ToString(); break;
                         case "StatusCode": if (prop.Value is int code) currentEntry.StatusCode = code; break;
                         case "Elapsed": if (prop.Value is double ms) currentEntry.ElapsedMilliseconds = ms; break;
-                        case "RequestHeaders": if (prop.Value is Dictionary<string, string> reqHeaders) currentEntry.RequestHeaders = reqHeaders; break;
+                        case "RequestHeaders":
+                            if (_options.IncludeRequestHeaders && prop.Value is Dictionary<string, string> reqHeaders) currentEntry.RequestHeaders = reqHeaders;
+                            break;
+                        case "ResponseHeaders":
+                            if (_options.IncludeResponseHeaders && prop.Value is Dictionary<string, string> resHeaders) currentEntry.ResponseHeaders = resHeaders;
+                            break;
                     }
                 }
             }

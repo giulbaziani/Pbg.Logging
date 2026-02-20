@@ -109,6 +109,12 @@ public class MyService
 | `Environment` | `PbgEnvironment` | ✅ | - | Development, Staging, Production, Testing, Uat |
 | `BatchSize` | `int` | | `50` | Logs per batch |
 | `FlushInterval` | `TimeSpan` | | `3s` | Batch send interval |
+| `IncludeUserId` | `bool` | | `false` | Include user identifier in logs |
+| `IncludeRequestHeaders` | `bool` | | `false` | Include request headers (consider allowlist/redaction) |
+| `IncludeResponseHeaders` | `bool` | | `false` | Include response headers |
+| `IncludeRequestBody` | `bool` | | `false` | Include request body (sensitive; off by default) |
+| `IncludeResponseBody` | `bool` | | `false` | Include response body (sensitive; off by default) |
+| `MaxBodyLength` | `int` | | `4096` | Maximum characters stored for request/response bodies |
 
 ## 📊 Log Structure
 

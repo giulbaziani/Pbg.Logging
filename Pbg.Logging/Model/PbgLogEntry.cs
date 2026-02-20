@@ -3,6 +3,7 @@
 public class PbgLogEntry
 {
     public string? TraceId { get; set; }
+    public string? RequestId { get; set; }
     public string? Environment { get; set; }
     public string? UserId { get; set; }
     public DateTime Timestamp { get; set; }
@@ -18,5 +19,6 @@ public class PbgLogEntry
     public string? RequestBody { get; set; }
     public string? ResponseBody { get; set; }
     public Dictionary<string, string>? RequestHeaders { get; set; }
+    public Dictionary<string, string>? ResponseHeaders { get; set; }
     public double? ElapsedMilliseconds { get; set; }
 }
