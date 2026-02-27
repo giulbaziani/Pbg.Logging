@@ -16,6 +16,14 @@ public class PbgLoggerOptions
     public bool IncludeRequestBody { get; set; } = false;
     public bool IncludeResponseBody { get; set; } = false;
     public int MaxBodyLength { get; set; } = 4096;
+    public HashSet<string> ExcludedExtensions { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".css", ".js", ".map",
+        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".bmp",
+        ".woff", ".woff2", ".ttf", ".eot", ".otf",
+        ".mp3", ".mp4", ".wav", ".avi", ".webm",
+        ".pdf", ".zip", ".gz", ".br"
+    };
 
     public void Validate()
     {

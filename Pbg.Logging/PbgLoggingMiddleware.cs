@@ -18,6 +18,12 @@ public class PbgLoggingMiddleware
 
     public async Task InvokeAsync(HttpContext context, ILogger<PbgLoggingMiddleware> logger)
     {
+        if (IsStaticFileRequest(context.Request.Path))
+        {
+            await _next(context);
+            return;
+        }
+
         var sw = Stopwatch.StartNew();
 
         var userId = context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
@@ -39,69 +45,68 @@ public class PbgLoggingMiddleware
         using var responseBodyMemoryStream = new MemoryStream();
         context.Response.Body = responseBodyMemoryStream;
 
-        var initialScope = new Dictionary<string, object>
+        try
         {
-            ["TraceId"] = traceId,
-            ["RequestId"] = context.TraceIdentifier,
-            ["Method"] = context.Request.Method,
-            ["Path"] = context.Request.Path
-        };
+            await _next(context);
 
-        if (_options.IncludeUserId)
-        {
-            initialScope["UserId"] = userId;
-        }
+            responseBodyMemoryStream.Position = 0;
+            var responseBody = await new StreamReader(responseBodyMemoryStream).ReadToEndAsync();
+            responseBodyMemoryStream.Position = 0;
 
-        if (_options.IncludeRequestHeaders && context.Request.Headers.Count > 0)
-        {
-            initialScope["RequestHeaders"] = context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
-        }
+            sw.Stop();
 
-        using (logger.BeginScope(initialScope))
-        {
-            try
+            var scope = new Dictionary<string, object>
             {
-                await _next(context);
+                ["TraceId"] = traceId,
+                ["RequestId"] = context.TraceIdentifier,
+                ["Method"] = context.Request.Method,
+                ["Path"] = context.Request.Path,
+                ["StatusCode"] = context.Response.StatusCode,
+                ["Elapsed"] = sw.Elapsed.TotalMilliseconds
+            };
 
-                responseBodyMemoryStream.Position = 0;
-                var responseBody = await new StreamReader(responseBodyMemoryStream).ReadToEndAsync();
-                responseBodyMemoryStream.Position = 0;
-
-                sw.Stop();
-
-                var finalScope = new Dictionary<string, object>
-                {
-                    ["StatusCode"] = context.Response.StatusCode,
-                    ["Elapsed"] = sw.Elapsed.TotalMilliseconds
-                };
-
-                if (_options.IncludeRequestBody)
-                {
-                    finalScope["RequestBody"] = requestBody;
-                }
-
-                if (_options.IncludeResponseBody)
-                {
-                    finalScope["ResponseBody"] = TrimToMaxLength(responseBody);
-                }
-
-                if (_options.IncludeResponseHeaders && context.Response.Headers.Count > 0)
-                {
-                    finalScope["ResponseHeaders"] = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
-                }
-
-                using (logger.BeginScope(finalScope))
-                {
-                    logger.LogInformation("HTTP Transaction Completed");
-                }
-
-                await responseBodyMemoryStream.CopyToAsync(originalBodyStream);
-            }
-            finally
+            if (_options.IncludeUserId)
             {
-                context.Response.Body = originalBodyStream;
+                scope["UserId"] = userId;
             }
+
+            if (_options.IncludeRequestBody)
+            {
+                scope["RequestBody"] = requestBody;
+            }
+
+            if (_options.IncludeResponseBody)
+            {
+                scope["ResponseBody"] = TrimToMaxLength(responseBody);
+            }
+
+            if (_options.IncludeRequestHeaders && context.Request.Headers.Count > 0)
+            {
+                scope["RequestHeaders"] = context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+            }
+
+            if (_options.IncludeResponseHeaders && context.Response.Headers.Count > 0)
+            {
+                scope["ResponseHeaders"] = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+            }
+
+            using (logger.BeginScope(scope))
+            {
+                logger.LogInformation("HTTP Transaction Completed");
+            }
+
+            await responseBodyMemoryStream.CopyToAsync(originalBodyStream);
         }
+        finally
+        {
+            context.Response.Body = originalBodyStream;
+        }
+    }
+
+    private bool IsStaticFileRequest(PathString path)
+    {
+        var extension = Path.GetExtension(path.Value);
+        return !string.IsNullOrEmpty(extension) && _options.ExcludedExtensions.Contains(extension);
     }
 
     private string TrimToMaxLength(string value)
