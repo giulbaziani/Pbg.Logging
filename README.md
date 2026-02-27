@@ -52,7 +52,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddPbgLogger(options =>
 {
     options.LicenseKey = new Guid("your-license-key-here");
-    options.EndpointUrl = "https://your-endpoint.com/api/logs";
+    options.EndpointUrl = "https://logs.pbg.ge/api/v1/log";
     options.ProjectName = "MyWebApi";
     options.Environment = PbgEnvironment.Production;
 });
