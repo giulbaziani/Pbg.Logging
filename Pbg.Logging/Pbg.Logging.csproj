@@ -1,26 +1,49 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-	  <TargetFrameworks>net6.0;net7.0;net8.0;net9.0;net10.0</TargetFrameworks>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-	<PackageId>Pbg.Logging</PackageId>
-	<Company>Pbg</Company>
-	<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
-	<PackageReadmeFile>README.md</PackageReadmeFile>
+	<PropertyGroup>
+		<TargetFrameworks>net6.0;net7.0;net8.0;net9.0;net10.0</TargetFrameworks>
 
-	<MinVerTagPrefix>v</MinVerTagPrefix>
-	<MinVerDefaultPreReleasePhase>preview</MinVerDefaultPreReleasePhase>
-  </PropertyGroup>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<PackageId>Pbg.Logging</PackageId>
+		<Company>Pbg</Company>
+
+		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+
+		<!-- MinVer -->
+		<MinVerTagPrefix>v</MinVerTagPrefix>
+		<MinVerDefaultPreReleasePhase>preview</MinVerDefaultPreReleasePhase>
+	</PropertyGroup>
+
+	<!-- net6.0 → C# 10 -->
+	<PropertyGroup Condition="'$(TargetFramework)' == 'net6.0'">
+		<LangVersion>12.0</LangVersion>
+	</PropertyGroup>
+
+	<!-- net7.0 → C# 11 -->
+	<PropertyGroup Condition="'$(TargetFramework)' == 'net7.0'">
+		<LangVersion>12.0</LangVersion>
+	</PropertyGroup>
+
+	<!-- net8.0+ → C# 12 -->
+	<PropertyGroup Condition="'$(TargetFramework)' == 'net8.0' 
+                         Or '$(TargetFramework)' == 'net9.0' 
+                         Or '$(TargetFramework)' == 'net10.0'">
+		<LangVersion>12.0</LangVersion>
+	</PropertyGroup>
 
 	<ItemGroup>
 		<None Include="..\README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
-
+	
 	<ItemGroup>
 		<PackageReference Include="MinVer" Version="6.0.0">
 			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<IncludeAssets>
+				runtime; build; native; contentfiles; analyzers; buildtransitive
+			</IncludeAssets>
 		</PackageReference>
 
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />

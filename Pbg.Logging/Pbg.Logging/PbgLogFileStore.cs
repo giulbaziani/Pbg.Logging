@@ -30,7 +30,11 @@ internal sealed class PbgLogFileStore
     public IEnumerable<string> GetPendingFiles()
     {
         if (!Directory.Exists(_directory))
-            return [];
+        #if NET8_0_OR_GREATER
+                    return [];
+        #else
+            return Enumerable.Empty<string>();
+        #endif
 
         return Directory.EnumerateFiles(_directory, "batch_*.json")
             .OrderBy(static f => f);
