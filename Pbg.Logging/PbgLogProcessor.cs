@@ -13,6 +13,7 @@ internal class PbgLogProcessor : BackgroundService
     private readonly Channel<PbgLogEntry> _channel;
     private readonly PbgLoggerOptions _options;
     private readonly HttpClient _httpClient;
+    private readonly PbgLogFileStore _fileStore;
     private readonly string _machineName;
     private readonly string _ipAddress;
     private static readonly JsonSerializerOptions JsonOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
@@ -23,6 +24,7 @@ internal class PbgLogProcessor : BackgroundService
         _options = options;
         _httpClient = new HttpClient();
         _httpClient.Timeout = TimeSpan.FromSeconds(15);
+        _fileStore = new PbgLogFileStore(options.ProjectName);
 
         _httpClient.DefaultRequestHeaders.Add("X-License-Key", _options.LicenseKey.ToString());
 
@@ -32,6 +34,8 @@ internal class PbgLogProcessor : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await FlushStoredLogsAsync(stoppingToken);
+
         var reader = _channel.Reader;
         var batch = new List<PbgLogEntry>();
 
@@ -50,7 +54,16 @@ internal class PbgLogProcessor : BackgroundService
 
                 if (batch.Count > 0)
                 {
-                    await SendLogsAsync(batch);
+                    if (await SendLogsAsync(batch))
+                    {
+                        await FlushStoredLogsAsync(stoppingToken);
+                    }
+                    else
+                    {
+                        await _fileStore.SaveAsync(batch);
+                        await SelfLogAsync("[Pbg.Logging] Batch saved to local fallback storage.", LogLevel.Warning);
+                    }
+
                     batch.Clear();
                 }
 
@@ -79,7 +92,7 @@ internal class PbgLogProcessor : BackgroundService
         await base.StopAsync(cancellationToken);
     }
 
-    private async Task SendLogsAsync(List<PbgLogEntry> logs)
+    private async Task<bool> SendLogsAsync(List<PbgLogEntry> logs)
     {
         int maxRetries = 3;
         int delaySeconds = 2;
@@ -92,7 +105,7 @@ internal class PbgLogProcessor : BackgroundService
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return;
+                    return true;
                 }
 
                 await SelfLogAsync($"[Pbg.Logging] Server returned error: {response.StatusCode}. Attempt {i + 1} of {maxRetries}", LogLevel.Error);
@@ -109,7 +122,33 @@ internal class PbgLogProcessor : BackgroundService
             }
         }
 
-        await SelfLogAsync("[Pbg.Logging] Critical: All retry attempts failed. Logs for this batch are lost.", LogLevel.Error);
+        return false;
+    }
+
+    private async Task FlushStoredLogsAsync(CancellationToken stoppingToken)
+    {
+        foreach (var file in _fileStore.GetPendingFiles())
+        {
+            if (stoppingToken.IsCancellationRequested)
+                break;
+
+            var logs = await _fileStore.LoadBatchAsync(file);
+
+            if (logs is null or { Count: 0 })
+            {
+                _fileStore.DeleteBatch(file);
+                continue;
+            }
+
+            if (await SendLogsAsync(logs))
+            {
+                _fileStore.DeleteBatch(file);
+            }
+            else
+            {
+                break;
+            }
+        }
     }
 
     private async Task SelfLogAsync(string message, LogLevel level)

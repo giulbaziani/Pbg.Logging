@@ -7,10 +7,15 @@
 	<PackageId>Pbg.Logging</PackageId>
 	<Company>Pbg</Company>
 	<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
 
 	<MinVerTagPrefix>v</MinVerTagPrefix>
 	<MinVerDefaultPreReleasePhase>preview</MinVerDefaultPreReleasePhase>
   </PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\README.md" Pack="true" PackagePath="\" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="MinVer" Version="6.0.0">

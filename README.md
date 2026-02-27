@@ -30,6 +30,16 @@ Install-Package Pbg.Logging
 
 Or visit the [NuGet Gallery](https://www.nuget.org/packages/Pbg.Logging/)
 
+
+## 🌐 Log Dashboard
+
+Visit **[https://logs.pbg.ge/](https://logs.pbg.ge/)** to:
+
+- 📋 **View and search logs** — browse all captured logs from your applications in real time
+- 🔑 **Generate a Service-Key** — after registration, create a `LicenseKey` to use with this library
+
+> **Getting started:** Register at [logs.pbg.ge](https://logs.pbg.ge/), generate your Service-Key, and use it as the `LicenseKey` in your configuration.
+
 ## Quick Start
 
 ### ASP.NET Core Web API
@@ -158,5 +168,6 @@ Requires a valid license key.
 
 ## 🔗 Links
 
+- **Dashboard**: [logs.pbg.ge](https://logs.pbg.ge/) — View logs & generate Service-Keys
 - **GitHub**: [guliv3r/Pbg.Logging](https://github.com/guliv3r/Pbg.Logging)
 - **Issues**: [Report bugs](https://github.com/guliv3r/Pbg.Logging/issues)
