@@ -92,7 +92,21 @@ public class PbgLoggingMiddleware
 
             using (logger.BeginScope(scope))
             {
-                logger.LogInformation("HTTP Transaction Completed");
+                logger.LogInformation("HTTP {Method} {Path} responded {StatusCode} in {Elapsed:0.0000}ms",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Response.StatusCode,
+                    sw.Elapsed.TotalMilliseconds);
+
+                if (_options.IncludeRequestBody && !string.IsNullOrEmpty(requestBody))
+                {
+                    logger.LogInformation("HTTP Request Body: {RequestBody}", requestBody);
+                }
+
+                if (_options.IncludeResponseBody && !string.IsNullOrEmpty(responseBody))
+                {
+                    logger.LogInformation("HTTP Response Body: {ResponseBody}", TrimToMaxLength(responseBody));
+                }
             }
 
             await responseBodyMemoryStream.CopyToAsync(originalBodyStream);
