@@ -115,11 +115,9 @@ internal class PbgLogProcessor : BackgroundService
                 await SelfLogAsync($"[Pbg.Logging] Network error: {ex.Message}. Attempt {i + 1} of {maxRetries}", LogLevel.Error);
             }
 
-            if (i < maxRetries - 1)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-                delaySeconds *= 2;
-            }
+            if (i >= maxRetries - 1) continue;
+            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+            delaySeconds *= 2;
         }
 
         return false;
@@ -164,7 +162,7 @@ internal class PbgLogProcessor : BackgroundService
             IpAddress = _ipAddress
         };
 
-        Console.Error.WriteLine($"[Pbg.Logging][{level}] {message}");
+        await Console.Error.WriteLineAsync($"[Pbg.Logging][{level}] {message}");
 
         try
         {

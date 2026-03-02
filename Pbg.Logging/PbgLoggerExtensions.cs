@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Configuration;
 using Pbg.Logging.Model;
@@ -24,9 +25,12 @@ public static class PbgLoggerExtensions
         builder.Services.AddSingleton(options);
         builder.Services.AddSingleton(channel);
 
+        builder.Services.AddTransient<PbgHttpClientLoggingHandler>();
+
         builder.Services.AddHostedService<PbgLogProcessor>();
 
         builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, PbgLoggerProvider>());
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHttpMessageHandlerBuilderFilter, PbgHttpClientLoggingFilter>());
 
         LoggerProviderOptions.RegisterProviderOptions<PbgLoggerOptions, PbgLoggerProvider>(builder.Services);
 
