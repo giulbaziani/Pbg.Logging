@@ -1,6 +1,7 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pbg.Logging.Model;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -17,6 +18,7 @@ internal class PbgLogProcessor : BackgroundService
     private readonly string _machineName;
     private readonly string _ipAddress;
     private static readonly JsonSerializerOptions JsonOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+    private const int MaxResponseSnippetLength = 512;
 
     public PbgLogProcessor(Channel<PbgLogEntry> channel, PbgLoggerOptions options)
     {
@@ -54,14 +56,21 @@ internal class PbgLogProcessor : BackgroundService
 
                 if (batch.Count > 0)
                 {
-                    if (await SendLogsAsync(batch, stoppingToken))
+                    var sendResult = await SendLogsAsync(batch, stoppingToken);
+
+                    if (sendResult.Outcome == SendOutcome.Success)
                     {
                         await FlushStoredLogsAsync(stoppingToken);
                     }
-                    else
+                    else if (sendResult.Outcome == SendOutcome.RetryableFailure)
                     {
                         await _fileStore.SaveAsync(batch);
                         await SelfLogAsync("[Pbg.Logging] Batch saved to local fallback storage.", LogLevel.Warning);
+                    }
+                    else
+                    {
+                        await _fileStore.SaveRejectedAsync(batch, sendResult.Detail ?? "Non-retriable error from server.");
+                        await SelfLogAsync("[Pbg.Logging] Batch moved to rejected local storage due to non-retriable server error.", LogLevel.Warning);
                     }
 
                     batch.Clear();
@@ -81,18 +90,19 @@ internal class PbgLogProcessor : BackgroundService
             }
 
             if (stoppingToken.IsCancellationRequested && reader.Completion.IsCompleted)
+            {
                 break;
+            }
         }
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _channel.Writer.TryComplete();
-
         await base.StopAsync(cancellationToken);
     }
 
-    private async Task<bool> SendLogsAsync(List<PbgLogEntry> logs, CancellationToken cancellationToken)
+    private async Task<SendResult> SendLogsAsync(List<PbgLogEntry> logs, CancellationToken cancellationToken)
     {
         var maxRetries = _options.MaxRetries;
         var retryDelay = _options.RetryBaseDelay;
@@ -110,10 +120,23 @@ internal class PbgLogProcessor : BackgroundService
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return true;
+                    return SendResult.Success();
                 }
 
-                await SelfLogAsync($"[Pbg.Logging] Server returned error: {response.StatusCode}. Attempt {i + 1} of {maxRetries}", LogLevel.Error);
+                var responseSnippet = await ReadResponseSnippetAsync(response, cancellationToken);
+                var detail = $"Status {(int)response.StatusCode} ({response.StatusCode}).{responseSnippet}";
+
+                if (IsNonRetriableStatusCode(response.StatusCode))
+                {
+                    await SelfLogAsync($"[Pbg.Logging] Server returned non-retriable error: {detail}", LogLevel.Error);
+                    return SendResult.NonRetryable(detail);
+                }
+
+                await SelfLogAsync($"[Pbg.Logging] Server returned retryable error: {detail} Attempt {i + 1} of {maxRetries}", LogLevel.Error);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -129,7 +152,7 @@ internal class PbgLogProcessor : BackgroundService
             retryDelay = TimeSpan.FromTicks(retryDelay.Ticks * 2);
         }
 
-        return false;
+        return SendResult.Retryable("[Pbg.Logging] Upload failed after max retries.");
     }
 
     private async Task FlushStoredLogsAsync(CancellationToken stoppingToken)
@@ -137,7 +160,9 @@ internal class PbgLogProcessor : BackgroundService
         foreach (var file in _fileStore.GetPendingFiles())
         {
             if (stoppingToken.IsCancellationRequested)
+            {
                 break;
+            }
 
             var logs = await _fileStore.LoadBatchAsync(file);
 
@@ -147,9 +172,20 @@ internal class PbgLogProcessor : BackgroundService
                 continue;
             }
 
-            if (await SendLogsAsync(logs, stoppingToken))
+            var sendResult = await SendLogsAsync(logs, stoppingToken);
+
+            if (sendResult.Outcome == SendOutcome.Success)
             {
                 _fileStore.DeleteBatch(file);
+            }
+            else if (sendResult.Outcome == SendOutcome.NonRetryableFailure)
+            {
+                await _fileStore.SaveRejectedAsync(logs, sendResult.Detail ?? "Non-retriable error from server.");
+                _fileStore.DeleteBatch(file);
+
+                await SelfLogAsync(
+                    $"[Pbg.Logging] Pending batch '{Path.GetFileName(file)}' moved to rejected storage due to non-retriable server error.",
+                    LogLevel.Warning);
             }
             else
             {
@@ -163,6 +199,43 @@ internal class PbgLogProcessor : BackgroundService
         await Console.Error.WriteLineAsync($"[Pbg.Logging][{level}] {message}");
     }
 
+    private static bool IsNonRetriableStatusCode(HttpStatusCode statusCode)
+    {
+        var code = (int)statusCode;
+
+        if (code < 400 || code >= 500)
+        {
+            return false;
+        }
+
+        return statusCode != HttpStatusCode.RequestTimeout && code != 429;
+    }
+
+    private static async Task<string> ReadResponseSnippetAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.Content is null)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return string.Empty;
+            }
+
+            responseBody = responseBody.ReplaceLineEndings(" ");
+            responseBody = PbgHttpBodyUtils.TrimToMaxLength(responseBody, MaxResponseSnippetLength);
+            return $" Response: {responseBody}";
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     private string GetLocalIpAddress()
     {
         try
@@ -171,6 +244,23 @@ internal class PbgLogProcessor : BackgroundService
                 .FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)?
                 .ToString() ?? "127.0.0.1";
         }
-        catch { return "0.0.0.0"; }
+        catch
+        {
+            return "0.0.0.0";
+        }
+    }
+
+    private readonly record struct SendResult(SendOutcome Outcome, string? Detail)
+    {
+        public static SendResult Success() => new(SendOutcome.Success, null);
+        public static SendResult Retryable(string? detail) => new(SendOutcome.RetryableFailure, detail);
+        public static SendResult NonRetryable(string? detail) => new(SendOutcome.NonRetryableFailure, detail);
+    }
+
+    private enum SendOutcome
+    {
+        Success,
+        RetryableFailure,
+        NonRetryableFailure
     }
 }

@@ -44,17 +44,35 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
         if (!canCaptureBodyForPath)
         {
-            await _next(context);
-            sw.Stop();
-
-            var scopeWithoutBody = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, null, requestHeaders, canCaptureBodyForPath);
-
-            using (logger.BeginScope(scopeWithoutBody))
+            try
             {
-                logger.LogInformation("HTTP IN {Method} {Path} responded {StatusCode}",
-                    context.Request.Method,
-                    context.Request.Path,
-                    context.Response.StatusCode);
+                await _next(context);
+                sw.Stop();
+
+                var scopeWithoutBody = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, null, requestHeaders, canCaptureBodyForPath);
+
+                using (logger.BeginScope(scopeWithoutBody))
+                {
+                    logger.LogInformation("HTTP IN {Method} {Path} responded {StatusCode}",
+                        context.Request.Method,
+                        context.Request.Path,
+                        context.Response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+
+                var failedScope = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, null, requestHeaders, canCaptureBodyForPath);
+
+                using (logger.BeginScope(failedScope))
+                {
+                    logger.LogError(ex, "HTTP IN {Method} {Path} failed",
+                        context.Request.Method,
+                        context.Request.Path);
+                }
+
+                throw;
             }
 
             return;
@@ -85,6 +103,29 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
             }
 
             await responseBodyMemoryStream.CopyToAsync(originalBodyStream);
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+
+            string? responseBody = null;
+            if (responseBodyMemoryStream.Length > 0)
+            {
+                responseBodyMemoryStream.Position = 0;
+                responseBody = await ReadResponseBodyAsync(responseBodyMemoryStream, context.Response.ContentType);
+                responseBodyMemoryStream.Position = 0;
+            }
+
+            var failedScope = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, responseBody, requestHeaders, canCaptureBodyForPath);
+
+            using (logger.BeginScope(failedScope))
+            {
+                logger.LogError(ex, "HTTP IN {Method} {Path} failed",
+                    context.Request.Method,
+                    context.Request.Path);
+            }
+
+            throw;
         }
         finally
         {

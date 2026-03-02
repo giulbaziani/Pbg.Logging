@@ -205,6 +205,14 @@ HTTP capture defaults are built-in and always on:
 - Backoff: **2s → 4s → 8s** (exponential)
 - Timeout: **30s** per request (configurable via `RequestTimeout`)
 
+### Upload Failure Handling
+
+- Retryable failures: network errors, `5xx`, `408`, `429`
+- Retryable batches are saved as `batch_*.json` and retried later
+- Non-retryable failures: `4xx` (except `408` and `429`)
+- Non-retryable batches are moved to `rejected_*.json` and skipped
+- Local files are stored in `%TEMP%/Pbg.Logging/{ProjectName}`
+
 ## 📝 License
 
 Requires a valid license key.
