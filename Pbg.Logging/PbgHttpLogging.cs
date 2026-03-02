@@ -157,13 +157,21 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         var userId = ResolveUserId(request.Headers.Authorization);
 
         var requestBody = string.Empty;
+        string? requestBodyCaptureError = null;
         Dictionary<string, string>? requestHeaders = null;
 
         requestHeaders = ExtractHeaders(request.Headers, request.Content?.Headers);
 
         if (canCaptureBodyForPath)
         {
-            requestBody = await CaptureAndCloneRequestBodyAsync(request, PbgHttpBodyUtils.DefaultMaxBodyLength);
+            try
+            {
+                requestBody = await CaptureAndCloneRequestBodyAsync(request, PbgHttpBodyUtils.DefaultMaxBodyLength);
+            }
+            catch (Exception ex)
+            {
+                requestBodyCaptureError = ex.Message;
+            }
         }
 
         HttpResponseMessage response;
@@ -210,13 +218,21 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         sw.Stop();
 
         var responseBody = string.Empty;
+        string? responseBodyCaptureError = null;
         Dictionary<string, string>? responseHeaders = null;
 
         responseHeaders = ExtractHeaders(response.Headers, response.Content?.Headers);
 
         if (canCaptureBodyForPath)
         {
-            responseBody = await CaptureAndCloneResponseBodyAsync(response, PbgHttpBodyUtils.DefaultMaxBodyLength);
+            try
+            {
+                responseBody = await CaptureAndCloneResponseBodyAsync(response, PbgHttpBodyUtils.DefaultMaxBodyLength);
+            }
+            catch (Exception ex)
+            {
+                responseBodyCaptureError = ex.Message;
+            }
         }
 
         var scope = new Dictionary<string, object>
@@ -252,6 +268,16 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         if (responseHeaders is { Count: > 0 })
         {
             scope["ResponseHeaders"] = responseHeaders;
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestBodyCaptureError))
+        {
+            scope["RequestBodyCaptureError"] = requestBodyCaptureError;
+        }
+
+        if (!string.IsNullOrWhiteSpace(responseBodyCaptureError))
+        {
+            scope["ResponseBodyCaptureError"] = responseBodyCaptureError;
         }
 
         using (_logger.BeginScope(scope))
