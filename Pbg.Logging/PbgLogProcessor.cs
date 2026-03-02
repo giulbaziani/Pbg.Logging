@@ -101,7 +101,12 @@ internal class PbgLogProcessor : BackgroundService
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync(_options.EndpointUrl, logs, JsonOptions, cancellationToken);
+                using var request = new HttpRequestMessage(HttpMethod.Post, _options.EndpointUrl)
+                {
+                    Content = JsonContent.Create(logs, options: JsonOptions)
+                };
+
+                using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -155,27 +160,7 @@ internal class PbgLogProcessor : BackgroundService
 
     private async Task SelfLogAsync(string message, LogLevel level)
     {
-        var selfLog = new PbgLogEntry
-        {
-            Timestamp = DateTime.UtcNow,
-            LogLevel = level.ToString(),
-            Message = message,
-            ProjectName = _options.ProjectName,
-            Environment = _options.Environment.ToString(),
-            MachineName = _machineName,
-            IpAddress = _ipAddress
-        };
-
         await Console.Error.WriteLineAsync($"[Pbg.Logging][{level}] {message}");
-
-        try
-        {
-            await _httpClient.PostAsJsonAsync(_options.EndpointUrl, new[] { selfLog }, JsonOptions);
-        }
-        catch
-        {
-            // Silently ignore — console output above is the fallback
-        }
     }
 
     private string GetLocalIpAddress()
