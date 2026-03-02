@@ -95,6 +95,67 @@ internal static class PbgHttpBodyUtils
     }
 }
 
+internal static class PbgHeaderSanitizer
+{
+    private const int DefaultMaxHeaderValueLength = 512;
+
+    private static readonly HashSet<string> SensitiveHeaderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        //"Authorization",
+        "Cookie",
+        "Set-Cookie",
+        "X-Api-Key",
+        "Proxy-Authorization"
+    };
+
+    public static Dictionary<string, string> Sanitize(IHeaderDictionary headers)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var header in headers)
+        {
+            result[header.Key] = SanitizeHeaderValue(header.Key, header.Value.ToString());
+        }
+
+        return result;
+    }
+
+    public static Dictionary<string, string> Sanitize(HttpHeaders headers, HttpHeaders? contentHeaders)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var header in headers)
+        {
+            result[header.Key] = SanitizeHeaderValue(header.Key, string.Join(",", header.Value));
+        }
+
+        if (contentHeaders is not null)
+        {
+            foreach (var header in contentHeaders)
+            {
+                result[header.Key] = SanitizeHeaderValue(header.Key, string.Join(",", header.Value));
+            }
+        }
+
+        return result;
+    }
+
+    private static string SanitizeHeaderValue(string headerName, string value)
+    {
+        if (SensitiveHeaderNames.Contains(headerName))
+        {
+            return "[REDACTED]";
+        }
+
+        if (string.IsNullOrEmpty(value) || value.Length <= DefaultMaxHeaderValueLength)
+        {
+            return value;
+        }
+
+        return value[..DefaultMaxHeaderValueLength];
+    }
+}
+
 internal sealed class PbgHttpClientLoggingFilter : IHttpMessageHandlerBuilderFilter
 {
     private readonly IServiceProvider _serviceProvider;
@@ -127,15 +188,6 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
     private readonly PbgLoggerOptions _options;
     private readonly IHttpContextAccessor _httpContextAccessor;
 
-    private static readonly HashSet<string> SensitiveHeaderNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Authorization",
-        "Cookie",
-        "Set-Cookie",
-        "X-Api-Key",
-        "Proxy-Authorization"
-    };
-
     public PbgHttpClientLoggingHandler(
         ILogger<PbgHttpClientLoggingHandler> logger,
         PbgLoggerOptions options,
@@ -160,7 +212,7 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         string? requestBodyCaptureError = null;
         Dictionary<string, string>? requestHeaders = null;
 
-        requestHeaders = ExtractHeaders(request.Headers, request.Content?.Headers);
+        requestHeaders = PbgHeaderSanitizer.Sanitize(request.Headers, request.Content?.Headers);
 
         if (canCaptureBodyForPath)
         {
@@ -221,7 +273,7 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         string? responseBodyCaptureError = null;
         Dictionary<string, string>? responseHeaders = null;
 
-        responseHeaders = ExtractHeaders(response.Headers, response.Content?.Headers);
+        responseHeaders = PbgHeaderSanitizer.Sanitize(response.Headers, response.Content?.Headers);
 
         if (canCaptureBodyForPath)
         {
@@ -328,26 +380,6 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         return PbgHttpBodyUtils.BytesToBodyString(captureBytes, contentType, maxChars);
     }
 
-    private static Dictionary<string, string> ExtractHeaders(HttpHeaders headers, HttpHeaders? contentHeaders)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var header in headers)
-        {
-            result[header.Key] = SanitizeHeaderValue(header.Key, header.Value);
-        }
-
-        if (contentHeaders is not null)
-        {
-            foreach (var header in contentHeaders)
-            {
-                result[header.Key] = SanitizeHeaderValue(header.Key, header.Value);
-            }
-        }
-
-        return result;
-    }
-
     private string? ResolveUserId(AuthenticationHeaderValue? authorizationHeader)
     {
         var fromContext = _httpContextAccessor.HttpContext?.User;
@@ -425,16 +457,6 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         var normalized = value.Replace('-', '+').Replace('_', '/');
         normalized = normalized.PadRight(normalized.Length + ((4 - normalized.Length % 4) % 4), '=');
         return Convert.FromBase64String(normalized);
-    }
-
-    private static string SanitizeHeaderValue(string headerName, IEnumerable<string> values)
-    {
-        if (SensitiveHeaderNames.Contains(headerName))
-        {
-            return "[REDACTED]";
-        }
-
-        return string.Join(",", values);
     }
 
     private static void CopyContentHeaders(HttpHeaders source, HttpHeaders destination)

@@ -32,7 +32,7 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
         if (context.Request.Headers.Count > 0)
         {
-            requestHeaders = context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+            requestHeaders = PbgHeaderSanitizer.Sanitize(context.Request.Headers);
         }
 
         if (canCaptureBodyForPath)
@@ -134,7 +134,7 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
         if (context.Response.Headers.Count > 0)
         {
-            scope["ResponseHeaders"] = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+            scope["ResponseHeaders"] = PbgHeaderSanitizer.Sanitize(context.Response.Headers);
         }
 
         return scope;
