@@ -21,7 +21,7 @@ public static class PbgLoggerExtensions
 
         var channel = Channel.CreateBounded<PbgLogEntry>(new BoundedChannelOptions(10000)
         {
-            FullMode = BoundedChannelFullMode.DropNewest
+            FullMode = BoundedChannelFullMode.Wait
         });
 
         builder.Services.AddSingleton(options);
@@ -73,6 +73,7 @@ internal class PbgLogger : ILogger
     private readonly ChannelWriter<PbgLogEntry> _writer;
     private readonly IExternalScopeProvider? _scopeProvider;
     private readonly string _categoryName;
+    private static long _droppedLogs;
 
     public PbgLogger(ChannelWriter<PbgLogEntry> writer, IExternalScopeProvider? scopeProvider, string categoryName)
     {
@@ -147,7 +148,7 @@ internal class PbgLogger : ILogger
 
         entry.TraceId = foundTraceId ?? Guid.NewGuid().ToString("N");
 
-        _writer.TryWrite(entry);
+        TryWriteWithBackpressure(entry);
     }
 
     private bool ShouldLog(LogLevel logLevel)
@@ -161,5 +162,36 @@ internal class PbgLogger : ILogger
         }
 
         return true;
+    }
+
+    private void TryWriteWithBackpressure(PbgLogEntry entry)
+    {
+        if (_writer.TryWrite(entry))
+        {
+            return;
+        }
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+            _writer.WriteAsync(entry, cts.Token).AsTask().GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            ReportDroppedLog();
+        }
+        catch
+        {
+            ReportDroppedLog();
+        }
+    }
+
+    private static void ReportDroppedLog()
+    {
+        var dropped = Interlocked.Increment(ref _droppedLogs);
+        if (dropped == 1 || dropped % 100 == 0)
+        {
+            Console.Error.WriteLine($"[Pbg.Logging][Warning] Log queue is full; dropped entries: {dropped}.");
+        }
     }
 }
