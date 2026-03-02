@@ -8,15 +8,19 @@ public class PbgLoggerOptions
     public PbgEnvironment Environment { get; set; }
     public string ProjectName { get; set; } = "UnknownProject";
     public string EndpointUrl { get; set; } = string.Empty;
-    public int BatchSize { get; set; } = 50;
+    public int BatchSize { get; set; } = 20;
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(3);
-    public bool IncludeUserId { get; set; } = false;
-    public bool IncludeRequestHeaders { get; set; } = true;
-    public bool IncludeResponseHeaders { get; set; } = true;
-    public bool IncludeRequestBody { get; set; } = true;
-    public bool IncludeResponseBody { get; set; } = true;
-    public bool EnableHttpClientLogging { get; set; } = true;
-    public int MaxBodyLength { get; set; } = 4096;
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);
+    public int MaxRetries { get; set; } = 3;
+    public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(2);
+    public HashSet<string> ExcludedBodyPathPrefixes { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/health",
+        "/healthz",
+        "/metrics",
+        "/swagger"
+    };
+
     public HashSet<string> ExcludedExtensions { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         ".css", ".js", ".map",
@@ -48,7 +52,36 @@ public class PbgLoggerOptions
         if (FlushInterval <= TimeSpan.Zero)
             throw new ArgumentException("Pbg.Logging: FlushInterval must be greater than zero.");
 
-        if (MaxBodyLength <= 0)
-            throw new ArgumentException("Pbg.Logging: MaxBodyLength must be greater than 0.");
+        if (RequestTimeout <= TimeSpan.Zero)
+            throw new ArgumentException("Pbg.Logging: RequestTimeout must be greater than zero.");
+
+        if (MaxRetries <= 0)
+            throw new ArgumentException("Pbg.Logging: MaxRetries must be greater than 0.");
+
+        if (RetryBaseDelay <= TimeSpan.Zero)
+            throw new ArgumentException("Pbg.Logging: RetryBaseDelay must be greater than zero.");
+    }
+
+    public bool IsBodyCaptureExcludedPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || ExcludedBodyPathPrefixes.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (var prefix in ExcludedBodyPathPrefixes)
+        {
+            if (string.IsNullOrWhiteSpace(prefix))
+            {
+                continue;
+            }
+
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
