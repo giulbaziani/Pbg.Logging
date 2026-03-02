@@ -153,15 +153,21 @@ Keep values in `appsettings.{Environment}.json`:
 | `EndpointUrl` | `string` | ✅ | - | API endpoint URL |
 | `ProjectName` | `string` | | `"UnknownProject"` | Project identifier |
 | `Environment` | `PbgEnvironment` | ✅ | - | Development, Staging, Production, Testing, Uat |
-| `BatchSize` | `int` | | `50` | Logs per batch |
+| `BatchSize` | `int` | | `20` | Logs per batch |
 | `FlushInterval` | `TimeSpan` | | `3s` | Batch send interval |
-| `IncludeUserId` | `bool` | | `false` | Include user identifier in logs |
-| `IncludeRequestHeaders` | `bool` | | `true` | Include request headers (consider allowlist/redaction) |
-| `IncludeResponseHeaders` | `bool` | | `true` | Include response headers |
-| `IncludeRequestBody` | `bool` | | `true` | Include request body (sensitive; enabled by default) |
-| `IncludeResponseBody` | `bool` | | `true` | Include response body (sensitive; enabled by default) |
-| `EnableHttpClientLogging` | `bool` | | `true` | Capture outbound `HttpClient` calls created via `IHttpClientFactory` |
-| `MaxBodyLength` | `int` | | `4096` | Maximum characters stored for request/response bodies |
+| `RequestTimeout` | `TimeSpan` | | `30s` | Timeout for log upload HTTP requests |
+| `MaxRetries` | `int` | | `3` | Upload retry attempts before local fallback |
+| `RetryBaseDelay` | `TimeSpan` | | `2s` | Exponential backoff base delay (2s, 4s, 8s...) |
+| `ExcludedBodyPathPrefixes` | `HashSet<string>` | | `/health,/healthz,/metrics,/swagger` | Skip request/response body capture for matching path prefixes |
+
+HTTP capture defaults are built-in and always on:
+- Request headers
+- Response headers
+- Request body (when present)
+- Response body (when present)
+- Outbound `HttpClient` interception for `IHttpClientFactory` clients
+- UserId from claims (when present)
+- Body capture limit: `2000` characters
 
 ## 📊 Log Structure
 
@@ -197,7 +203,7 @@ Keep values in `appsettings.{Environment}.json`:
 
 - Max retries: **3**
 - Backoff: **2s → 4s → 8s** (exponential)
-- Timeout: **15s** per request
+- Timeout: **30s** per request (configurable via `RequestTimeout`)
 
 ## 📝 License
 

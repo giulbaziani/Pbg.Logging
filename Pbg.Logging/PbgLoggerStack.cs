@@ -1,0 +1,165 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Configuration;
+using Pbg.Logging.Model;
+using System.Diagnostics;
+using System.Threading.Channels;
+
+namespace Pbg.Logging;
+
+public static class PbgLoggerExtensions
+{
+    public static ILoggingBuilder AddPbgLogger(this ILoggingBuilder builder, Action<PbgLoggerOptions> configure)
+    {
+        var options = new PbgLoggerOptions();
+        configure(options);
+        options.Validate();
+
+        var channel = Channel.CreateBounded<PbgLogEntry>(new BoundedChannelOptions(10000)
+        {
+            FullMode = BoundedChannelFullMode.DropNewest
+        });
+
+        builder.Services.AddSingleton(options);
+        builder.Services.AddSingleton(channel);
+        builder.Services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+
+        builder.Services.AddTransient<PbgHttpClientLoggingHandler>();
+        builder.Services.AddHostedService<PbgLogProcessor>();
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, PbgLoggerProvider>());
+        builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<IHttpMessageHandlerBuilderFilter, PbgHttpClientLoggingFilter>());
+
+        LoggerProviderOptions.RegisterProviderOptions<PbgLoggerOptions, PbgLoggerProvider>(builder.Services);
+
+        return builder;
+    }
+
+    public static IApplicationBuilder UsePbgLogging(this IApplicationBuilder app)
+    {
+        return app.UseMiddleware<PbgLoggingMiddleware>();
+    }
+}
+
+[ProviderAlias("Pbg")]
+internal class PbgLoggerProvider : ILoggerProvider, ISupportExternalScope
+{
+    private readonly ChannelWriter<PbgLogEntry> _writer;
+    private IExternalScopeProvider? _scopeProvider;
+
+    public PbgLoggerProvider(Channel<PbgLogEntry> channel)
+    {
+        _writer = channel.Writer;
+    }
+
+    public ILogger CreateLogger(string categoryName)
+    {
+        return new PbgLogger(_writer, _scopeProvider, categoryName);
+    }
+
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider)
+    {
+        _scopeProvider = scopeProvider;
+    }
+
+    public void Dispose() { }
+}
+
+internal class PbgLogger : ILogger
+{
+    private readonly ChannelWriter<PbgLogEntry> _writer;
+    private readonly IExternalScopeProvider? _scopeProvider;
+    private readonly string _categoryName;
+
+    public PbgLogger(ChannelWriter<PbgLogEntry> writer, IExternalScopeProvider? scopeProvider, string categoryName)
+    {
+        _writer = writer;
+        _scopeProvider = scopeProvider;
+        _categoryName = categoryName;
+    }
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => _scopeProvider?.Push(state);
+
+    public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        if (!ShouldLog(logLevel)) return;
+
+        var entry = new PbgLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            LogLevel = logLevel.ToString(),
+            Message = formatter(state, exception),
+            Exception = exception?.ToString()
+        };
+
+        string? foundTraceId = Activity.Current?.TraceId.ToHexString();
+
+        _scopeProvider?.ForEachScope((scope, currentEntry) =>
+        {
+            if (scope is IEnumerable<KeyValuePair<string, object>> properties)
+            {
+                foreach (var prop in properties)
+                {
+                    switch (prop.Key)
+                    {
+                        case "UserId":
+                            currentEntry.UserId = prop.Value?.ToString();
+                            break;
+                        case "RequestId":
+                            currentEntry.RequestId = prop.Value?.ToString();
+                            break;
+                        case "TraceId":
+                            if (string.IsNullOrEmpty(foundTraceId)) foundTraceId = prop.Value?.ToString();
+                            break;
+                        case "RequestBody":
+                            currentEntry.RequestBody = prop.Value?.ToString();
+                            break;
+                        case "ResponseBody":
+                            currentEntry.ResponseBody = prop.Value?.ToString();
+                            break;
+                        case "Method":
+                            currentEntry.Method = prop.Value?.ToString();
+                            break;
+                        case "Path":
+                            currentEntry.Path = prop.Value?.ToString();
+                            break;
+                        case "StatusCode":
+                            if (prop.Value is int code) currentEntry.StatusCode = code;
+                            break;
+                        case "Elapsed":
+                            if (prop.Value is double ms) currentEntry.ElapsedMilliseconds = ms;
+                            break;
+                        case "RequestHeaders":
+                            if (prop.Value is Dictionary<string, string> reqHeaders) currentEntry.RequestHeaders = reqHeaders;
+                            break;
+                        case "ResponseHeaders":
+                            if (prop.Value is Dictionary<string, string> resHeaders) currentEntry.ResponseHeaders = resHeaders;
+                            break;
+                    }
+                }
+            }
+        }, entry);
+
+        entry.TraceId = foundTraceId ?? Guid.NewGuid().ToString("N");
+
+        _writer.TryWrite(entry);
+    }
+
+    private bool ShouldLog(LogLevel logLevel)
+    {
+        if (logLevel >= LogLevel.Error) return true;
+        if (_categoryName.Contains("Microsoft.Hosting.Lifetime")) return true;
+
+        if (_categoryName.StartsWith("Microsoft") || _categoryName.StartsWith("System"))
+        {
+            return logLevel >= LogLevel.Warning;
+        }
+
+        return true;
+    }
+}

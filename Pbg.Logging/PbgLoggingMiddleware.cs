@@ -25,28 +25,29 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
                      ?? string.Empty;
 
         var traceId = context.TraceIdentifier;
+        var canCaptureBodyForPath = !_options.IsBodyCaptureExcludedPath(context.Request.Path.Value);
 
         var requestBody = string.Empty;
         Dictionary<string, string>? requestHeaders = null;
 
-        if (_options.IncludeRequestHeaders && context.Request.Headers.Count > 0)
+        if (context.Request.Headers.Count > 0)
         {
             requestHeaders = context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
         }
 
-        if (_options.IncludeRequestBody)
+        if (canCaptureBodyForPath)
         {
             context.Request.EnableBuffering();
             requestBody = await ReadRequestBodyAsync(context.Request);
             context.Request.Body.Position = 0;
         }
 
-        if (!_options.IncludeResponseBody)
+        if (!canCaptureBodyForPath)
         {
             await _next(context);
             sw.Stop();
 
-            var scopeWithoutBody = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, null, requestHeaders);
+            var scopeWithoutBody = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, null, requestHeaders, canCaptureBodyForPath);
 
             using (logger.BeginScope(scopeWithoutBody))
             {
@@ -73,7 +74,7 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
             var responseBody = await ReadResponseBodyAsync(responseBodyMemoryStream, context.Response.ContentType);
             responseBodyMemoryStream.Position = 0;
 
-            var scope = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, responseBody, requestHeaders);
+            var scope = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, responseBody, requestHeaders, canCaptureBodyForPath);
 
             using (logger.BeginScope(scope))
             {
@@ -98,7 +99,8 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
         string userId,
         string requestBody,
         string? responseBody,
-        Dictionary<string, string>? requestHeaders)
+        Dictionary<string, string>? requestHeaders,
+        bool canCaptureBodyForPath)
     {
         var scope = new Dictionary<string, object>
         {
@@ -110,27 +112,27 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
             ["Elapsed"] = elapsedMs
         };
 
-        if (_options.IncludeUserId)
+        if (!string.IsNullOrWhiteSpace(userId))
         {
             scope["UserId"] = userId;
         }
 
-        if (_options.IncludeRequestBody)
+        if (canCaptureBodyForPath && !string.IsNullOrEmpty(requestBody))
         {
             scope["RequestBody"] = requestBody;
         }
 
-        if (_options.IncludeResponseBody && responseBody is not null)
+        if (canCaptureBodyForPath && !string.IsNullOrEmpty(responseBody))
         {
             scope["ResponseBody"] = responseBody;
         }
 
-        if (_options.IncludeRequestHeaders && requestHeaders is not null)
+        if (requestHeaders is { Count: > 0 })
         {
             scope["RequestHeaders"] = requestHeaders;
         }
 
-        if (_options.IncludeResponseHeaders && context.Response.Headers.Count > 0)
+        if (context.Response.Headers.Count > 0)
         {
             scope["ResponseHeaders"] = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
         }
@@ -140,16 +142,16 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
     private async Task<string> ReadRequestBodyAsync(HttpRequest request)
     {
-        var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(_options.MaxBodyLength);
+        var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(PbgHttpBodyUtils.DefaultMaxBodyLength);
         var bytes = await ReadLimitedBytesAsync(request.Body, maxCaptureBytes);
-        return PbgHttpBodyUtils.BytesToBodyString(bytes, request.ContentType, _options.MaxBodyLength);
+        return PbgHttpBodyUtils.BytesToBodyString(bytes, request.ContentType, PbgHttpBodyUtils.DefaultMaxBodyLength);
     }
 
     private async Task<string> ReadResponseBodyAsync(Stream responseStream, string? contentType)
     {
-        var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(_options.MaxBodyLength);
+        var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(PbgHttpBodyUtils.DefaultMaxBodyLength);
         var bytes = await ReadLimitedBytesAsync(responseStream, maxCaptureBytes);
-        return PbgHttpBodyUtils.BytesToBodyString(bytes, contentType, _options.MaxBodyLength);
+        return PbgHttpBodyUtils.BytesToBodyString(bytes, contentType, PbgHttpBodyUtils.DefaultMaxBodyLength);
     }
 
     private static async Task<byte[]> ReadLimitedBytesAsync(Stream stream, int maxBytes)

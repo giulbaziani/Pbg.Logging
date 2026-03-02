@@ -23,7 +23,7 @@ internal class PbgLogProcessor : BackgroundService
         _channel = channel;
         _options = options;
         _httpClient = new HttpClient();
-        _httpClient.Timeout = TimeSpan.FromSeconds(15);
+        _httpClient.Timeout = _options.RequestTimeout;
         _fileStore = new PbgLogFileStore(options.ProjectName);
 
         _httpClient.DefaultRequestHeaders.Add("X-License-Key", _options.LicenseKey.ToString());
@@ -54,7 +54,7 @@ internal class PbgLogProcessor : BackgroundService
 
                 if (batch.Count > 0)
                 {
-                    if (await SendLogsAsync(batch))
+                    if (await SendLogsAsync(batch, stoppingToken))
                     {
                         await FlushStoredLogsAsync(stoppingToken);
                     }
@@ -92,16 +92,16 @@ internal class PbgLogProcessor : BackgroundService
         await base.StopAsync(cancellationToken);
     }
 
-    private async Task<bool> SendLogsAsync(List<PbgLogEntry> logs)
+    private async Task<bool> SendLogsAsync(List<PbgLogEntry> logs, CancellationToken cancellationToken)
     {
-        int maxRetries = 3;
-        int delaySeconds = 2;
+        var maxRetries = _options.MaxRetries;
+        var retryDelay = _options.RetryBaseDelay;
 
         for (int i = 0; i < maxRetries; i++)
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync(_options.EndpointUrl, logs, JsonOptions);
+                var response = await _httpClient.PostAsJsonAsync(_options.EndpointUrl, logs, JsonOptions, cancellationToken);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -115,9 +115,13 @@ internal class PbgLogProcessor : BackgroundService
                 await SelfLogAsync($"[Pbg.Logging] Network error: {ex.Message}. Attempt {i + 1} of {maxRetries}", LogLevel.Error);
             }
 
-            if (i >= maxRetries - 1) continue;
-            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-            delaySeconds *= 2;
+            if (i >= maxRetries - 1)
+            {
+                continue;
+            }
+
+            await Task.Delay(retryDelay, cancellationToken);
+            retryDelay = TimeSpan.FromTicks(retryDelay.Ticks * 2);
         }
 
         return false;
@@ -138,7 +142,7 @@ internal class PbgLogProcessor : BackgroundService
                 continue;
             }
 
-            if (await SendLogsAsync(logs))
+            if (await SendLogsAsync(logs, stoppingToken))
             {
                 _fileStore.DeleteBatch(file);
             }
