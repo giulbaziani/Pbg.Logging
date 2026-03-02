@@ -27,14 +27,30 @@ internal sealed class PbgLogFileStore
         await JsonSerializer.SerializeAsync(stream, logs, JsonOptions);
     }
 
+    public async Task SaveRejectedAsync(List<PbgLogEntry> logs, string reason)
+    {
+        var fileName = $"rejected_{DateTime.UtcNow:yyyyMMddHHmmssfff}_{Guid.NewGuid():N}.json";
+        var filePath = Path.Combine(_directory, fileName);
+
+        var payload = new RejectedBatch
+        {
+            Timestamp = DateTime.UtcNow,
+            Reason = reason,
+            Logs = logs
+        };
+
+        await using var stream = File.Create(filePath);
+        await JsonSerializer.SerializeAsync(stream, payload, JsonOptions);
+    }
+
     public IEnumerable<string> GetPendingFiles()
     {
         if (!Directory.Exists(_directory))
-        #if NET8_0_OR_GREATER
-                    return [];
-        #else
+#if NET8_0_OR_GREATER
+            return [];
+#else
             return Enumerable.Empty<string>();
-        #endif
+#endif
 
         return Directory.EnumerateFiles(_directory, "batch_*.json")
             .OrderBy(static f => f);
@@ -61,7 +77,7 @@ internal sealed class PbgLogFileStore
         }
         catch
         {
-            // Ignore — will be retried next cycle
+            // Ignore; will be retried next cycle.
         }
     }
 
@@ -69,5 +85,12 @@ internal sealed class PbgLogFileStore
     {
         var invalid = Path.GetInvalidFileNameChars();
         return string.Concat(name.Select(c => invalid.Contains(c) ? '_' : c));
+    }
+
+    private sealed class RejectedBatch
+    {
+        public DateTime Timestamp { get; init; }
+        public string Reason { get; init; } = string.Empty;
+        public List<PbgLogEntry> Logs { get; init; } = [];
     }
 }
