@@ -108,6 +108,42 @@ public class MyService
 }
 ```
 
+### Environment Mapping (One Code for All Environments)
+
+Use `ASPNETCORE_ENVIRONMENT`/`builder.Environment.EnvironmentName` and map it to `PbgEnvironment` once:
+
+```csharp
+using Pbg.Logging.Model;
+
+builder.Logging.AddPbgLogger(options =>
+{
+    options.LicenseKey = Guid.Parse(builder.Configuration["PbgLogging:LicenseKey"]!);
+    options.EndpointUrl = builder.Configuration["PbgLogging:EndpointUrl"]!;
+    options.ProjectName = builder.Configuration["PbgLogging:ProjectName"] ?? builder.Environment.ApplicationName;
+    options.Environment = builder.Environment.EnvironmentName.ToLowerInvariant() switch
+    {
+        "development" => PbgEnvironment.Development,
+        "staging" => PbgEnvironment.Staging,
+        "production" => PbgEnvironment.Production,
+        "testing" => PbgEnvironment.Testing,
+        "uat" => PbgEnvironment.Uat,
+        _ => PbgEnvironment.Production
+    };
+});
+```
+
+`LicenseKey` can be the same for all environments or different per environment (recommended).
+Keep values in `appsettings.{Environment}.json`:
+
+```json
+{
+  "PbgLogging": {
+    "LicenseKey": "11111111-1111-1111-1111-111111111111",
+    "EndpointUrl": "https://logs.pbg.ge/api/v1/log",
+    "ProjectName": "MyService"
+  }
+}
+```
 
 ## ⚙️ Configuration
 
@@ -120,10 +156,11 @@ public class MyService
 | `BatchSize` | `int` | | `50` | Logs per batch |
 | `FlushInterval` | `TimeSpan` | | `3s` | Batch send interval |
 | `IncludeUserId` | `bool` | | `false` | Include user identifier in logs |
-| `IncludeRequestHeaders` | `bool` | | `false` | Include request headers (consider allowlist/redaction) |
-| `IncludeResponseHeaders` | `bool` | | `false` | Include response headers |
-| `IncludeRequestBody` | `bool` | | `false` | Include request body (sensitive; off by default) |
-| `IncludeResponseBody` | `bool` | | `false` | Include response body (sensitive; off by default) |
+| `IncludeRequestHeaders` | `bool` | | `true` | Include request headers (consider allowlist/redaction) |
+| `IncludeResponseHeaders` | `bool` | | `true` | Include response headers |
+| `IncludeRequestBody` | `bool` | | `true` | Include request body (sensitive; enabled by default) |
+| `IncludeResponseBody` | `bool` | | `true` | Include response body (sensitive; enabled by default) |
+| `EnableHttpClientLogging` | `bool` | | `true` | Capture outbound `HttpClient` calls created via `IHttpClientFactory` |
 | `MaxBodyLength` | `int` | | `4096` | Maximum characters stored for request/response bodies |
 
 ## 📊 Log Structure

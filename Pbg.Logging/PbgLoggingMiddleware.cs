@@ -5,16 +5,10 @@ using System.Security.Claims;
 
 namespace Pbg.Logging;
 
-public class PbgLoggingMiddleware
+public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options)
 {
-    private readonly RequestDelegate _next;
-    private readonly PbgLoggerOptions _options;
-
-    public PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options)
-    {
-        _next = next;
-        _options = options;
-    }
+    private readonly RequestDelegate _next = next;
+    private readonly PbgLoggerOptions _options = options;
 
     public async Task InvokeAsync(HttpContext context, ILogger<PbgLoggingMiddleware> logger)
     {
@@ -31,82 +25,62 @@ public class PbgLoggingMiddleware
                      ?? string.Empty;
 
         var traceId = context.TraceIdentifier;
-        string requestBody = string.Empty;
+
+        var requestBody = string.Empty;
+        Dictionary<string, string>? requestHeaders = null;
+
+        if (_options.IncludeRequestHeaders && context.Request.Headers.Count > 0)
+        {
+            requestHeaders = context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+        }
 
         if (_options.IncludeRequestBody)
         {
             context.Request.EnableBuffering();
-            requestBody = await new StreamReader(context.Request.Body).ReadToEndAsync();
+            requestBody = await ReadRequestBodyAsync(context.Request);
             context.Request.Body.Position = 0;
-            requestBody = TrimToMaxLength(requestBody);
+        }
+
+        if (!_options.IncludeResponseBody)
+        {
+            await _next(context);
+            sw.Stop();
+
+            var scopeWithoutBody = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, null, requestHeaders);
+
+            using (logger.BeginScope(scopeWithoutBody))
+            {
+                logger.LogInformation("HTTP IN {Method} {Path} responded {StatusCode}",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Response.StatusCode);
+            }
+
+            return;
         }
 
         var originalBodyStream = context.Response.Body;
-        using var responseBodyMemoryStream = new MemoryStream();
+        await using var responseBodyMemoryStream = new MemoryStream();
         context.Response.Body = responseBodyMemoryStream;
 
         try
         {
             await _next(context);
 
-            responseBodyMemoryStream.Position = 0;
-            var responseBody = await new StreamReader(responseBodyMemoryStream).ReadToEndAsync();
-            responseBodyMemoryStream.Position = 0;
-
             sw.Stop();
 
-            var scope = new Dictionary<string, object>
-            {
-                ["TraceId"] = traceId,
-                ["RequestId"] = context.TraceIdentifier,
-                ["Method"] = context.Request.Method,
-                ["Path"] = context.Request.Path,
-                ["StatusCode"] = context.Response.StatusCode,
-                ["Elapsed"] = sw.Elapsed.TotalMilliseconds
-            };
+            responseBodyMemoryStream.Position = 0;
+            var responseBody = await ReadResponseBodyAsync(responseBodyMemoryStream, context.Response.ContentType);
+            responseBodyMemoryStream.Position = 0;
 
-            if (_options.IncludeUserId)
-            {
-                scope["UserId"] = userId;
-            }
-
-            if (_options.IncludeRequestBody)
-            {
-                scope["RequestBody"] = requestBody;
-            }
-
-            if (_options.IncludeResponseBody)
-            {
-                scope["ResponseBody"] = TrimToMaxLength(responseBody);
-            }
-
-            if (_options.IncludeRequestHeaders && context.Request.Headers.Count > 0)
-            {
-                scope["RequestHeaders"] = context.Request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
-            }
-
-            if (_options.IncludeResponseHeaders && context.Response.Headers.Count > 0)
-            {
-                scope["ResponseHeaders"] = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
-            }
+            var scope = BuildScope(context, traceId, sw.Elapsed.TotalMilliseconds, userId, requestBody, responseBody, requestHeaders);
 
             using (logger.BeginScope(scope))
             {
-                logger.LogInformation("HTTP {Method} {Path} responded {StatusCode} in {Elapsed:0.0000}ms",
+                logger.LogInformation("HTTP IN {Method} {Path} responded {StatusCode}",
                     context.Request.Method,
                     context.Request.Path,
-                    context.Response.StatusCode,
-                    sw.Elapsed.TotalMilliseconds);
-
-                if (_options.IncludeRequestBody && !string.IsNullOrEmpty(requestBody))
-                {
-                    logger.LogInformation("HTTP Request Body: {RequestBody}", requestBody);
-                }
-
-                if (_options.IncludeResponseBody && !string.IsNullOrEmpty(responseBody))
-                {
-                    logger.LogInformation("HTTP Response Body: {ResponseBody}", TrimToMaxLength(responseBody));
-                }
+                    context.Response.StatusCode);
             }
 
             await responseBodyMemoryStream.CopyToAsync(originalBodyStream);
@@ -117,19 +91,94 @@ public class PbgLoggingMiddleware
         }
     }
 
+    private Dictionary<string, object> BuildScope(
+        HttpContext context,
+        string traceId,
+        double elapsedMs,
+        string userId,
+        string requestBody,
+        string? responseBody,
+        Dictionary<string, string>? requestHeaders)
+    {
+        var scope = new Dictionary<string, object>
+        {
+            ["TraceId"] = traceId,
+            ["RequestId"] = context.TraceIdentifier,
+            ["Method"] = context.Request.Method,
+            ["Path"] = context.Request.Path.ToString(),
+            ["StatusCode"] = context.Response.StatusCode,
+            ["Elapsed"] = elapsedMs
+        };
+
+        if (_options.IncludeUserId)
+        {
+            scope["UserId"] = userId;
+        }
+
+        if (_options.IncludeRequestBody)
+        {
+            scope["RequestBody"] = requestBody;
+        }
+
+        if (_options.IncludeResponseBody && responseBody is not null)
+        {
+            scope["ResponseBody"] = responseBody;
+        }
+
+        if (_options.IncludeRequestHeaders && requestHeaders is not null)
+        {
+            scope["RequestHeaders"] = requestHeaders;
+        }
+
+        if (_options.IncludeResponseHeaders && context.Response.Headers.Count > 0)
+        {
+            scope["ResponseHeaders"] = context.Response.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+        }
+
+        return scope;
+    }
+
+    private async Task<string> ReadRequestBodyAsync(HttpRequest request)
+    {
+        var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(_options.MaxBodyLength);
+        var bytes = await ReadLimitedBytesAsync(request.Body, maxCaptureBytes);
+        return PbgHttpBodyUtils.BytesToBodyString(bytes, request.ContentType, _options.MaxBodyLength);
+    }
+
+    private async Task<string> ReadResponseBodyAsync(Stream responseStream, string? contentType)
+    {
+        var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(_options.MaxBodyLength);
+        var bytes = await ReadLimitedBytesAsync(responseStream, maxCaptureBytes);
+        return PbgHttpBodyUtils.BytesToBodyString(bytes, contentType, _options.MaxBodyLength);
+    }
+
+    private static async Task<byte[]> ReadLimitedBytesAsync(Stream stream, int maxBytes)
+    {
+        var buffer = new byte[4096];
+        var totalRead = 0;
+
+        await using var memory = new MemoryStream();
+
+        while (totalRead < maxBytes)
+        {
+            var toRead = Math.Min(buffer.Length, maxBytes - totalRead);
+            var read = await stream.ReadAsync(buffer, 0, toRead);
+
+            if (read <= 0)
+            {
+                break;
+            }
+
+            await memory.WriteAsync(buffer, 0, read);
+            totalRead += read;
+        }
+
+        return memory.ToArray();
+    }
+
     private bool IsStaticFileRequest(PathString path)
     {
         var extension = Path.GetExtension(path.Value);
         return !string.IsNullOrEmpty(extension) && _options.ExcludedExtensions.Contains(extension);
-    }
-
-    private string TrimToMaxLength(string value)
-    {
-        if (string.IsNullOrEmpty(value) || value.Length <= _options.MaxBodyLength)
-        {
-            return value;
-        }
-
-        return value[.._options.MaxBodyLength];
     }
 }

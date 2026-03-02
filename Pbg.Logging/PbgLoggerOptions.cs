@@ -11,10 +11,11 @@ public class PbgLoggerOptions
     public int BatchSize { get; set; } = 50;
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(3);
     public bool IncludeUserId { get; set; } = false;
-    public bool IncludeRequestHeaders { get; set; } = false;
-    public bool IncludeResponseHeaders { get; set; } = false;
-    public bool IncludeRequestBody { get; set; } = false;
-    public bool IncludeResponseBody { get; set; } = false;
+    public bool IncludeRequestHeaders { get; set; } = true;
+    public bool IncludeResponseHeaders { get; set; } = true;
+    public bool IncludeRequestBody { get; set; } = true;
+    public bool IncludeResponseBody { get; set; } = true;
+    public bool EnableHttpClientLogging { get; set; } = true;
     public int MaxBodyLength { get; set; } = 4096;
     public HashSet<string> ExcludedExtensions { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
