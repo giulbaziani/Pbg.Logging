@@ -167,7 +167,7 @@ HTTP capture defaults are built-in and always on:
 - Response body (when present)
 - Outbound `HttpClient` interception for `IHttpClientFactory` clients
 - UserId from claims (when present)
-- Body capture limit: `2000` characters
+- Body capture limit: `2000` characters (JSON responses are logged fully)
 
 ## 📊 Log Structure
 
