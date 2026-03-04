@@ -35,6 +35,16 @@ internal static class PbgHttpBodyUtils
                || value.Contains("x-www-form-urlencoded");
     }
 
+    public static bool IsJsonContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return false;
+        }
+
+        return contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static Encoding GetEncodingFromContentType(string? contentType)
     {
         if (string.IsNullOrWhiteSpace(contentType))
@@ -65,7 +75,7 @@ internal static class PbgHttpBodyUtils
         return Encoding.UTF8;
     }
 
-    public static string BytesToBodyString(byte[] bytes, string? contentType, int maxChars)
+    public static string BytesToBodyString(byte[] bytes, string? contentType, int maxChars, bool logFullJson = false)
     {
         if (bytes.Length == 0)
         {
@@ -76,6 +86,12 @@ internal static class PbgHttpBodyUtils
         {
             var encoding = GetEncodingFromContentType(contentType);
             var text = encoding.GetString(bytes);
+
+            if (logFullJson && IsJsonContentType(contentType))
+            {
+                return text;
+            }
+
             return TrimToMaxLength(text, maxChars);
         }
 
@@ -373,9 +389,14 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
         CopyContentHeaders(response.Content.Headers, clonedContent.Headers);
         response.Content = clonedContent;
 
+        var contentType = response.Content.Headers.ContentType?.ToString();
+        if (PbgHttpBodyUtils.IsJsonContentType(contentType))
+        {
+            return PbgHttpBodyUtils.BytesToBodyString(bytes, contentType, maxChars, logFullJson: true);
+        }
+
         var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(maxChars);
         var captureBytes = bytes.Length <= maxCaptureBytes ? bytes : bytes[..maxCaptureBytes];
-        var contentType = response.Content.Headers.ContentType?.ToString();
 
         return PbgHttpBodyUtils.BytesToBodyString(captureBytes, contentType, maxChars);
     }

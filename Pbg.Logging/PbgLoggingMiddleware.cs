@@ -180,9 +180,31 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
     private async Task<string> ReadResponseBodyAsync(Stream responseStream, string? contentType)
     {
+        if (PbgHttpBodyUtils.IsJsonContentType(contentType))
+        {
+            var fullBytes = await ReadAllBytesAsync(responseStream);
+            return PbgHttpBodyUtils.BytesToBodyString(
+                fullBytes,
+                contentType,
+                PbgHttpBodyUtils.DefaultMaxBodyLength,
+                logFullJson: true);
+        }
+
         var maxCaptureBytes = PbgHttpBodyUtils.GetMaxCaptureBytes(PbgHttpBodyUtils.DefaultMaxBodyLength);
         var bytes = await ReadLimitedBytesAsync(responseStream, maxCaptureBytes);
         return PbgHttpBodyUtils.BytesToBodyString(bytes, contentType, PbgHttpBodyUtils.DefaultMaxBodyLength);
+    }
+
+    private static async Task<byte[]> ReadAllBytesAsync(Stream stream)
+    {
+        if (stream is MemoryStream memoryStream)
+        {
+            return memoryStream.ToArray();
+        }
+
+        await using var memory = new MemoryStream();
+        await stream.CopyToAsync(memory);
+        return memory.ToArray();
     }
 
     private static async Task<byte[]> ReadLimitedBytesAsync(Stream stream, int maxBytes)
