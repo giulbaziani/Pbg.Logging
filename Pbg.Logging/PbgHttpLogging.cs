@@ -334,7 +334,7 @@ internal sealed class PbgHttpClientLoggingHandler : DelegatingHandler
 
         using (_logger.BeginScope(scope))
         {
-            _logger.LogInformation("HTTP OUT {Method} {Url} responded {StatusCode}", request.Method, request.RequestUri, (int)response.StatusCode);
+            _logger.LogInformation("{Method} {Url}", request.Method, request.RequestUri);
         }
 
         return response;
