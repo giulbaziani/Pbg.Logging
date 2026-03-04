@@ -53,10 +53,7 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
                 using (logger.BeginScope(scopeWithoutBody))
                 {
-                    logger.LogInformation("HTTP IN {Method} {Path} responded {StatusCode}",
-                        context.Request.Method,
-                        context.Request.Path,
-                        context.Response.StatusCode);
+                    logger.LogInformation("{Method} {Path}", context.Request.Method, context.Request.Path);
                 }
             }
             catch (Exception ex)
@@ -67,9 +64,7 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
                 using (logger.BeginScope(failedScope))
                 {
-                    logger.LogError(ex, "HTTP IN {Method} {Path} failed",
-                        context.Request.Method,
-                        context.Request.Path);
+                    logger.LogError(ex, "{Method} {Path}", context.Request.Method, context.Request.Path);
                 }
 
                 throw;
@@ -96,10 +91,7 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
             using (logger.BeginScope(scope))
             {
-                logger.LogInformation("HTTP IN {Method} {Path} responded {StatusCode}",
-                    context.Request.Method,
-                    context.Request.Path,
-                    context.Response.StatusCode);
+                logger.LogInformation("{Method} {Path}", context.Request.Method, context.Request.Path);
             }
 
             await responseBodyMemoryStream.CopyToAsync(originalBodyStream);
@@ -120,9 +112,7 @@ public class PbgLoggingMiddleware(RequestDelegate next, PbgLoggerOptions options
 
             using (logger.BeginScope(failedScope))
             {
-                logger.LogError(ex, "HTTP IN {Method} {Path} failed",
-                    context.Request.Method,
-                    context.Request.Path);
+                logger.LogError(ex, "{Method} {Path}", context.Request.Method, context.Request.Path);
             }
 
             throw;
