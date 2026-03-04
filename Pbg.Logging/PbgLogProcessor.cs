@@ -2,7 +2,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Pbg.Logging.Model;
 using System.Net;
-using System.Net.Http.Json;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Channels;
@@ -26,6 +27,8 @@ internal class PbgLogProcessor : BackgroundService
         _options = options;
         _httpClient = new HttpClient();
         _httpClient.Timeout = _options.RequestTimeout;
+        _httpClient.DefaultRequestVersion = HttpVersion.Version11;
+        _httpClient.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
         _fileStore = new PbgLogFileStore(options.ProjectName);
 
         _httpClient.DefaultRequestHeaders.Add("X-License-Key", _options.LicenseKey.ToString());
@@ -111,10 +114,7 @@ internal class PbgLogProcessor : BackgroundService
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, _options.EndpointUrl)
-                {
-                    Content = JsonContent.Create(logs, options: JsonOptions)
-                };
+                using var request = CreateUploadRequest(logs);
 
                 using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
@@ -197,6 +197,23 @@ internal class PbgLogProcessor : BackgroundService
     private async Task SelfLogAsync(string message, LogLevel level)
     {
         await Console.Error.WriteLineAsync($"[Pbg.Logging][{level}] {message}");
+    }
+
+    private HttpRequestMessage CreateUploadRequest(List<PbgLogEntry> logs)
+    {
+        var payload = JsonSerializer.Serialize(logs, JsonOptions);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, _options.EndpointUrl)
+        {
+            Version = HttpVersion.Version11,
+            VersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.ExpectContinue = false;
+
+        return request;
     }
 
     private static bool IsNonRetriableStatusCode(HttpStatusCode statusCode)
